@@ -90,8 +90,11 @@ func URLEncode(src []byte) string {
 // URLDecode decodes an unpadded base64url string.
 //
 // Every byte outside the alphabet is rejected, including '=', '+', '/' and
-// whitespace: this decodes tokens, so leniency would mean accepting a signature
-// segment the signer never produced.
+// whitespace, and so is any non-canonical encoding (RFC 4648 §3.5: the unused
+// trailing bits of the final group must be zero). This decodes tokens, so
+// leniency would mean accepting a signature segment the signer never produced.
+// It is equivalent to the stdlib's RawURLEncoding.Strict() — deliberately
+// stricter than the stdlib default, which accepts non-canonical input.
 func URLDecode(s string) ([]byte, error) {
 	if len(s) == 0 {
 		return []byte{}, nil
@@ -128,6 +131,14 @@ func URLDecode(s string) ([]byte, error) {
 			bits -= 8
 			dst = append(dst, byte(buf>>bits))
 		}
+	}
+
+	// RFC 4648 §3.5: the leftover bits of a final partial group MUST be zero.
+	// Otherwise several encodings decode to the same bytes ("Zg" and "Zh" both
+	// yield "f"), and a decoder this strict about the alphabet would still be
+	// accepting strings no encoder produces.
+	if bits > 0 && buf&(1<<bits-1) != 0 {
+		return nil, ErrInvalid
 	}
 
 	return dst, nil

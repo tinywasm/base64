@@ -80,8 +80,9 @@ func main() {
 
 ## Garantías
 
-- **Idéntico al stdlib**: verificado contra `encoding/base64.RawURLEncoding` en
-  200/200 entradas aleatorias, en codificación y decodificación.
+- **Codifica idéntico al stdlib** (`RawURLEncoding`); **decodifica como
+  `RawURLEncoding.Strict()`** — deliberadamente más estricto que el stdlib por
+  defecto, que acepta codificaciones no canónicas.
 - **Vectores RFC 4648 §10**, no solo round-trips: un round-trip pasa igual aunque
   las dos direcciones estén mal del mismo modo.
 - **URL-safe**: la salida nunca contiene `+`, `/` ni `=` (usa `-` y `_` para los
@@ -89,6 +90,11 @@ func main() {
 - **Estricto al decodificar**: rechaza padding, alfabeto estándar, espacios y
   cualquier byte fuera del alfabeto. Decodifica *tokens*: ser permisivo
   significaría aceptar una firma que el emisor nunca generó.
+- **Solo canónico** (RFC 4648 §3.5): los bits sobrantes del último grupo deben ser
+  cero. Sin esta comprobación, `"Zg"` y `"Zh"` decodifican ambos a `"f"` — varias
+  grafías para los mismos bytes, es decir, malleabilidad. Lo destapó la auditoría
+  de seguridad de [`tinywasm/jwt`](https://github.com/tinywasm/jwt/blob/main/docs/SECURITY_AUDIT.md)
+  (hallazgo I-1).
 - **Sin `map`**: la tabla de decodificación es un `[256]byte`.
 
 ## Tests

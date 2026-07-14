@@ -14,6 +14,44 @@ func RunBase64Tests(t *testing.T) {
 	t.Run("RoundTrip", test_RoundTrip)
 	t.Run("DecodeErrors", test_DecodeErrors)
 	t.Run("DecodeVectors", test_DecodeVectors)
+	t.Run("DecodeCanonicality", test_DecodeCanonicality)
+}
+
+// RFC 4648 §3.5: the leftover bits of a final partial group MUST be zero. A decoder
+// that ignores them accepts several spellings for the same bytes — a signature
+// segment the signer never produced. Each pair below differs ONLY in those bits.
+func test_DecodeCanonicality(t *testing.T) {
+	cases := []struct {
+		input string
+		ok    bool
+	}{
+		// len%4 == 2 → 4 leftover bits
+		{"Zg", true},  // "f" — 'g' leaves 0000
+		{"Zh", false}, // 'h' leaves 0001, decodes to "f" if unchecked
+		{"AQ", true},  // 0x01
+		{"AR", false}, // same 0x01 if unchecked
+		// len%4 == 3 → 2 leftover bits
+		{"AAA", true},  // 0x00 0x00
+		{"AAB", false}, // leftover 01
+		{"Zm8", true},  // "fo" — RFC vector
+		{"Zm9", false}, // leftover not zero
+	}
+
+	for _, c := range cases {
+		got, err := URLDecode(c.input)
+		if c.ok {
+			if err != nil {
+				t.Errorf("URLDecode(%q) canonical input rejected: %v", c.input, err)
+			}
+			continue
+		}
+		if err != ErrInvalid {
+			t.Errorf("URLDecode(%q) non-canonical input: error = %v, want ErrInvalid", c.input, err)
+		}
+		if got != nil {
+			t.Errorf("URLDecode(%q) returned %v, want nil on error", c.input, got)
+		}
+	}
 }
 
 // rfc4648Vectors are the RFC 4648 §10 test vectors, unpadded (RawURLEncoding).
