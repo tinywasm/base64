@@ -15,6 +15,10 @@ func RunBase64Tests(t *testing.T) {
 	t.Run("DecodeErrors", test_DecodeErrors)
 	t.Run("DecodeVectors", test_DecodeVectors)
 	t.Run("DecodeCanonicality", test_DecodeCanonicality)
+	t.Run("StandardVectors", test_StandardVectors)
+	t.Run("StandardDecodeVectors", test_StandardDecodeVectors)
+	t.Run("StandardRoundTrip", test_StandardRoundTrip)
+	t.Run("StandardDecodeErrors", test_StandardDecodeErrors)
 }
 
 // RFC 4648 §3.5: the leftover bits of a final partial group MUST be zero. A decoder
@@ -122,6 +126,85 @@ func test_RoundTrip(t *testing.T) {
 		}
 		if !bytes.Equal(got, src) {
 			t.Fatalf("round trip of %d bytes: got %v, want %v", n, got, src)
+		}
+	}
+}
+
+// rfc4648StandardVectors are the same RFC 4648 §10 vectors as
+// rfc4648Vectors, but padded — the shape Encode/Decode (StdEncoding) produce
+// and expect, as opposed to URLEncode/URLDecode's unpadded RawURLEncoding.
+var rfc4648StandardVectors = []struct {
+	decoded string
+	encoded string
+}{
+	{"", ""},
+	{"f", "Zg=="},
+	{"fo", "Zm8="},
+	{"foo", "Zm9v"},
+	{"foob", "Zm9vYg=="},
+	{"fooba", "Zm9vYmE="},
+	{"foobar", "Zm9vYmFy"},
+}
+
+func test_StandardVectors(t *testing.T) {
+	for _, v := range rfc4648StandardVectors {
+		got := Encode([]byte(v.decoded))
+		if got != v.encoded {
+			t.Errorf("Encode(%q) = %q, want %q", v.decoded, got, v.encoded)
+		}
+	}
+}
+
+func test_StandardDecodeVectors(t *testing.T) {
+	for _, v := range rfc4648StandardVectors {
+		got, err := Decode(v.encoded)
+		if err != nil {
+			t.Errorf("Decode(%q) failed: %v", v.encoded, err)
+			continue
+		}
+		if string(got) != v.decoded {
+			t.Errorf("Decode(%q) = %q, want %q", v.encoded, got, v.decoded)
+		}
+	}
+}
+
+func test_StandardRoundTrip(t *testing.T) {
+	for n := 0; n <= 64; n++ {
+		src := make([]byte, n)
+		for i := range src {
+			src[i] = byte(i*7 + n*3)
+		}
+
+		got, err := Decode(Encode(src))
+		if err != nil {
+			t.Fatalf("round trip of %d bytes failed: %v", n, err)
+		}
+		if !bytes.Equal(got, src) {
+			t.Fatalf("round trip of %d bytes: got %v, want %v", n, got, src)
+		}
+	}
+}
+
+func test_StandardDecodeErrors(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"unpadded", "Zg"},
+		{"url-safe alphabet", "-_8="},
+		{"non-alphabet byte", "Zg!="},
+		{"wrong padding count", "Zm8=="},
+		{"interior padding", "Z=8="},
+		{"whitespace", "Zm 9v"},
+	}
+
+	for _, c := range cases {
+		got, err := Decode(c.input)
+		if err != ErrInvalid {
+			t.Errorf("Decode(%q) [%s] error = %v, want ErrInvalid", c.input, c.name, err)
+		}
+		if got != nil {
+			t.Errorf("Decode(%q) [%s] returned %v, want nil on error", c.input, c.name, got)
 		}
 	}
 }

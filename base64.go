@@ -28,10 +28,17 @@ const urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456
 // invalidByte marks a byte that is not part of the alphabet.
 const invalidByte = 0xFF
 
-// urlDecodeTable maps an ASCII byte to its 6-bit value, or invalidByte.
-// An array, not a map: no hashing, no allocation, and it keeps the package free
-// of map types.
+// standardAlphabet is the RFC 4648 §4 alphabet used by JSON/HTTP payloads —
+// data URIs, MCP content blocks, anything a browser decodes with atob() or a
+// client SDK decodes as plain base64. '+' and '/' are fine there; only URLs
+// and JWT segments need the URL-safe variant above.
+const standardAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+// urlDecodeTable and standardDecodeTable map an ASCII byte to its 6-bit
+// value, or invalidByte. Arrays, not maps: no hashing, no allocation, and it
+// keeps the package free of map types.
 var urlDecodeTable = newDecodeTable(urlAlphabet)
+var standardDecodeTable = newDecodeTable(standardAlphabet)
 
 func newDecodeTable(alphabet string) [256]byte {
 	var t [256]byte
@@ -137,6 +144,105 @@ func URLDecode(s string) ([]byte, error) {
 	// Otherwise several encodings decode to the same bytes ("Zg" and "Zh" both
 	// yield "f"), and a decoder this strict about the alphabet would still be
 	// accepting strings no encoder produces.
+	if bits > 0 && buf&(1<<bits-1) != 0 {
+		return nil, ErrInvalid
+	}
+
+	return dst, nil
+}
+
+// Encode encodes src as standard base64 (RFC 4648 §4) WITH padding —
+// equivalent to the stdlib's StdEncoding. This is what data URIs, MCP image
+// content, and most JSON/HTTP payloads expect; use URLEncode instead for
+// tokens embedded in a URL or a JWT segment.
+func Encode(src []byte) string {
+	if len(src) == 0 {
+		return ""
+	}
+
+	n := (len(src) + 2) / 3 * 4
+	dst := make([]byte, 0, n)
+	i := 0
+	for ; i+2 < len(src); i += 3 {
+		v := uint(src[i])<<16 | uint(src[i+1])<<8 | uint(src[i+2])
+		dst = append(dst,
+			standardAlphabet[v>>18&0x3F],
+			standardAlphabet[v>>12&0x3F],
+			standardAlphabet[v>>6&0x3F],
+			standardAlphabet[v&0x3F],
+		)
+	}
+
+	switch len(src) - i {
+	case 1:
+		v := uint(src[i]) << 16
+		dst = append(dst, standardAlphabet[v>>18&0x3F], standardAlphabet[v>>12&0x3F], '=', '=')
+	case 2:
+		v := uint(src[i])<<16 | uint(src[i+1])<<8
+		dst = append(dst, standardAlphabet[v>>18&0x3F], standardAlphabet[v>>12&0x3F], standardAlphabet[v>>6&0x3F], '=')
+	}
+
+	return string(dst)
+}
+
+// Decode decodes a padded standard base64 string (RFC 4648 §4), equivalent
+// to the stdlib's StdEncoding.Strict(). Padding is required and its length
+// must match the trailing group size; any '=' outside the final group — or
+// any byte outside the standard alphabet — is rejected via the same
+// canonicality rule URLDecode applies.
+func Decode(s string) ([]byte, error) {
+	if len(s) == 0 {
+		return []byte{}, nil
+	}
+	if len(s)%4 != 0 {
+		return nil, ErrInvalid
+	}
+
+	padding := 0
+	if s[len(s)-1] == '=' {
+		padding = 1
+		if s[len(s)-2] == '=' {
+			padding = 2
+		}
+	}
+	core := s[:len(s)-padding]
+
+	switch len(core) % 4 {
+	case 0:
+		if padding != 0 {
+			return nil, ErrInvalid
+		}
+	case 2:
+		if padding != 2 {
+			return nil, ErrInvalid
+		}
+	case 3:
+		if padding != 1 {
+			return nil, ErrInvalid
+		}
+	default:
+		return nil, ErrInvalid
+	}
+
+	dst := make([]byte, 0, len(s)/4*3-padding)
+	var buf uint
+	var bits uint
+
+	for i := 0; i < len(core); i++ {
+		c := standardDecodeTable[core[i]]
+		if c == invalidByte {
+			return nil, ErrInvalid
+		}
+
+		buf = buf<<6 | uint(c)
+		bits += 6
+
+		if bits >= 8 {
+			bits -= 8
+			dst = append(dst, byte(buf>>bits))
+		}
+	}
+
 	if bits > 0 && buf&(1<<bits-1) != 0 {
 		return nil, ErrInvalid
 	}
