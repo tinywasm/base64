@@ -49,11 +49,35 @@ tener sentido.
 func URLEncode(src []byte) string
 func URLDecode(s string) ([]byte, error)
 
+// base64 estándar (RFC 4648 §4), CON padding — equivale a StdEncoding.
+func Encode(src []byte) string
+func Decode(s string) ([]byte, error)
+
 var ErrInvalid error
+
+// Alfabeto configurable — p. ej. bcrypt.
+type Encoding struct { /* ... */ }
+
+func NewEncoding(alphabet string, pad bool) (*Encoding, error)
+func (e *Encoding) Encode(src []byte) string
+func (e *Encoding) Decode(s string) ([]byte, error)
+func (e *Encoding) EncodedLen(n int) int
+func (e *Encoding) DecodedLen(n int) int
+
+type Error string
+
+const (
+	ErrAlphabetLength    = Error("base64: el alfabeto debe tener exactamente 64 caracteres")
+	ErrAlphabetDuplicate = Error("base64: el alfabeto tiene caracteres repetidos")
+	ErrAlphabetNonASCII  = Error("base64: el alfabeto sólo admite ASCII")
+	ErrInvalidCharacter  = Error("base64: carácter no válido en la entrada")
+	ErrInvalidLength     = Error("base64: longitud de entrada no válida")
+)
 ```
 
-Sin constructor y sin estado: funciones directas a nivel de paquete, como el
-resto del ecosistema.
+`Encode`/`Decode` y `URLEncode`/`URLDecode` son envoltorios sin estado sobre
+dos `*Encoding` pre-construidos; `NewEncoding` es el motor genérico que
+precalcula la tabla inversa y comparte el mismo bucle de bits.
 
 ## Uso
 
@@ -75,6 +99,23 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(string(b)) // hello
+}
+
+// Alfabeto propio (bcrypt: "./A-Za-z0-9" sin relleno)
+func Example_bcrypt() {
+	bcryptAlphabet := "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	enc, err := base64.NewEncoding(bcryptAlphabet, false)
+	if err != nil {
+		panic(err)
+	}
+	s := enc.Encode([]byte("hello"))
+	println(s)
+
+	b, err := enc.Decode(s)
+	if err != nil {
+		panic(err)
+	}
+	println(string(b))
 }
 ```
 

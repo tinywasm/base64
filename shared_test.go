@@ -19,6 +19,13 @@ func RunBase64Tests(t *testing.T) {
 	t.Run("StandardDecodeVectors", test_StandardDecodeVectors)
 	t.Run("StandardRoundTrip", test_StandardRoundTrip)
 	t.Run("StandardDecodeErrors", test_StandardDecodeErrors)
+	t.Run("AlphabetValidation", test_AlphabetValidation)
+	t.Run("BcryptRoundTrip", test_BcryptRoundTrip)
+	t.Run("NoPadding", test_NoPadding)
+	t.Run("StdAlphabetWithPad", test_StdAlphabetWithPad)
+	t.Run("InvalidCharacter", test_InvalidCharacter)
+	t.Run("InvalidLength", test_InvalidLength)
+	t.Run("AlphabetEncodedDecodedLen", test_AlphabetEncodedDecodedLen)
 }
 
 // RFC 4648 §3.5: the leftover bits of a final partial group MUST be zero. A decoder
